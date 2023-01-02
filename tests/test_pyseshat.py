@@ -91,5 +91,14 @@ class TestPyseshat(unittest.TestCase):
         NGAs = getNGAs(version='PNAS2017')
         self.assertEqual(len(NGAs), 30)
 
+    def test_tailoredSvd(self):
+        # Do an SVD on the original PNAS 2017 dataset and check the variance
+        # explained by PC1 (it should be .772)
+        CC_matrix, _ = loadPNAS2017CC(scale=True)
+        P, D, Q, PC_matrix = tailoredSvd(CC_matrix)
+        Dsqr = [v**2 for v in D]
+        PC1_var = Dsqr[0] / np.sum(Dsqr)
+        self.assertAlmostEqual(PC1_var, .772, places=3)
+
 if __name__ == '__main__':
     unittest.main()

@@ -10,7 +10,8 @@ def tailoredSvd(data):
     """
     data -= np.mean(data, axis=0)
     P, D, Q = np.linalg.svd(data, full_matrices=False)
-    return P, D, Q
+    PC_matrix = np.matmul(data, Q.T)
+    return P, D, Q, PC_matrix
 
 def loadPNAS2017CC(scale=False):
     """Load the CC data from the 2017 PNAS article. Both the array and CC names
