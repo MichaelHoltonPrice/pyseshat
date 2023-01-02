@@ -1,0 +1,6 @@
+PySeshat.egg-info
+build
+dist
+seshat_env
+pyseshat/__pycache__
+tests/__pycache__
