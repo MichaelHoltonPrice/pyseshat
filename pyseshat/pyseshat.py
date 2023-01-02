@@ -13,9 +13,8 @@ def tailoredSvd(data):
     PC_matrix = np.matmul(data, Q.T)
     return P, D, Q, PC_matrix
 
-def loadPNAS2017CC(scale=False):
-    """Load the CC data from the 2017 PNAS article. Both the array and CC names
-    are returned.
+def loadPNAS2017Data():
+    """Load the data from the 2017 PNAS article.
 
     Keyword arguments:
     scale -- Whether to scale the CC array (default False, do not scale)
@@ -24,10 +23,12 @@ def loadPNAS2017CC(scale=False):
     CC_names = ['PolPop','PolTerr', 'CapPop',
                 'levels', 'government','infrastr',
                 'writing', 'texts', 'money']
-    CC_array = CC_df.loc[:, CC_names].values
-    if scale:
-        CC_array = StandardScaler().fit_transform(CC_array)
-    return CC_array, CC_names
+    CC_matrix_unscaled = CC_df.loc[:, CC_names].values
+    CC_matrix_scaled = StandardScaler().fit_transform(CC_matrix_unscaled)
+    P, D, Q, PC_matrix = tailoredSvd(CC_matrix_scaled)
+    
+    return CC_df, CC_names, CC_matrix_unscaled, CC_matrix_scaled,\
+        P, D, Q, PC_matrix
  
 def loadSeshatDataset(version, flavor=None):
     """Load a seshat dataset
@@ -208,3 +209,90 @@ def getNGAs(version):
     
     NGAs.sort()
     return NGAs
+
+def doFlowAnalysis(CC_df, PC_matrix, stratifyBy='NGA'):
+    """Build a movement and velocity arrays for the first two columns of
+    PC_matrix. In principle, PC_matrix could be any array based on CC_df, but
+    it is probably the principle components. CC_df and PC_matrix must have the
+    same number of rows. The unit of analysis is specified by stratifyBy, which
+    is probably NGA, but for flexibility can be any column in CC_df. In what is
+    obviously a recurring theme, CC_df could be just about any dataframe, but
+    probably contains complexity characteristics.
+    """
+
+    # The unique units of analysis. We'll call these NGAs, but in principle
+    # they could be anythinng
+    NGAs = list(set(CC_df[stratifyBy].values))
+
+    # Note: the original Seshat dataset (PNAS2017) used 20 imputations for each
+    # entry, but the Equinox dataset only has 1 imputation for each entry. This
+    # method allows an arbitrary number of imputations (including none), though
+    # with no imputations (or only one) some inefficient averages are done.
+
+    # The inputs for this data creation are the complexity characteristic
+    # dataframe, CC_df [8280 x 13; this is for the PNAS2017 dataset], and the
+    # matrix of principal component projections, PC_matrix [8280 x 9; this is
+    # for the PNAS2017 dataset]. For the PNAS2017 dataset, each row is
+    # an imputed observation for 8280 / 20 = 414 unique polity configurations.
+    # CC_df provides key information for each observation, such as NGA and
+    # Time.
+    #
+    #  Four arrays are created: movArrayOut, velArrayIn, movArrayIn, and
+    # velArrayIn. For the PNAS2017 dataset, all four arrays have the dimensions
+    # 414 x 9 x 2. mov stands for movements and vel for velocity. 414 is the
+    # numbers of observations, 8 is the number of PCs, and the final axis has
+    # two elements: (a) the PC value and (b) the change in the PC value going
+    # to the next point in the NGA's time sequence (or, for vel, the change
+    # divided by the time difference). The "Out" arrays give the movement (or
+    # velocity) away from a point and the "In" arrays give the movement (or
+    # velocity) towards a point. The difference is set to NA for the last point
+    # in each "Out" sequence and the first point in each "In" sequence. In
+    # addition, NGA name and time are stored in the dataframe flowInfo (the
+    # needed "supporting" info for each  observation).
+    num_cc = PC_matrix.shape[1]
+
+    # Generate the "Out" datasets
+    # Initialize the movement array "Out" 
+    movArrayOut = np.empty(shape=(0,num_cc,2))
+    # Initialize the velocity array "Out" [location, movement / duration,
+    #                                      duration]
+    velArrayOut = np.empty(shape=(0,num_cc,3))
+    # Initialize the info dataframe
+    flowInfo = pd.DataFrame(columns=[stratifyBy,'Time']) 
+
+    # Iterate over NGAs to populate movArrayOut, velArrayOut, and flowInfo
+    for nga in NGAs:
+        indNga = CC_df[stratifyBy] == nga # boolean vector for slicing by NGA
+        # Vector of unique times:
+        times = sorted(np.unique(CC_df.loc[indNga,'Time']))
+        for i_t,t in enumerate(times):
+            # boolean vector for slicing also by time:
+            ind = indNga & (CC_df['Time']==t)
+            newInfoRow = pd.DataFrame(data={'NGA': [nga], 'Time': [t]})
+            #flowInfo = flowInfo.append(newInfoRow,ignore_index=True)
+            flowInfo = pd.concat([flowInfo, newInfoRow],ignore_index=True)
+            newArrayEntryMov = np.empty(shape=(1,num_cc,2))
+            newArrayEntryVel = np.empty(shape=(1,num_cc,3))
+            for p in range(movArrayOut.shape[1]):
+                # Average across imputations:
+                newArrayEntryMov[0,p,0] = np.mean(PC_matrix[ind,p])
+                # Average across imputations:
+                newArrayEntryVel[0,p,0] = np.mean(PC_matrix[ind,p])
+                if i_t < len(times) - 1:
+                    nextTime = times[i_t + 1]
+                    # boolean vector for slicing also by time:
+                    nextInd = indNga & (CC_df['Time']==nextTime)
+                    nextVal = np.mean(PC_matrix[nextInd,p])
+                    newArrayEntryMov[0,p,1] = nextVal - newArrayEntryMov[0,p,0]
+                    newArrayEntryVel[0,p,1] =\
+                        newArrayEntryMov[0,p,1]/(nextTime-t)
+                    newArrayEntryVel[0,p,2] = (nextTime-t)
+                else:
+                    newArrayEntryMov[0,p,1] = np.nan
+                    newArrayEntryVel[0,p,1] = np.nan
+                    newArrayEntryVel[0,p,2] = np.nan
+            movArrayOut = np.append(movArrayOut,newArrayEntryMov,axis=0)
+            velArrayOut = np.append(velArrayOut,newArrayEntryVel,axis=0)
+    return movArrayOut, velArrayOut, flowInfo
+    
+

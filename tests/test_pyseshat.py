@@ -31,19 +31,25 @@ class TestPyseshat(unittest.TestCase):
             df = loadSeshatDataset(version='PNAS2017', flavor=flavor)
             self.assertTrue(df.shape[0] > 0)
 
-    def test_loadPNAS2017CC(self):
+    def test_loadPNAS2017Data(self):
         # Check that we can load both the unscaled and scaled CC arrays
-        CC_array_unscaled, _ = loadPNAS2017CC()
-        self.assertEqual(CC_array_unscaled.shape, (8280, 9))
-        CC_array_scaled, _ = loadPNAS2017CC(scale=True)
-        self.assertEqual(CC_array_scaled.shape, (8280, 9))
+        CC_df, CC_names, CC_matrix_unscaled, CC_matrix_scaled,\
+            P, D, Q, PC_matrix = loadPNAS2017Data()
+        self.assertEqual(CC_df.shape, (8280, 13))
+        self.assertEqual(len(CC_names), 9)
+        self.assertEqual(CC_matrix_unscaled.shape, (8280, 9))
+        self.assertEqual(CC_matrix_scaled.shape, (8280, 9))
+        self.assertEqual(PC_matrix.shape, (8280, 9))
+        self.assertEqual(P.shape, (8280, 9))
+        self.assertEqual(len(D), 9)
+        self.assertEqual(Q.shape, (9, 9))
 
         # Iterate over columns to check the scaling
         for cc_num in range(9):
-            CC_unscaled = CC_array_unscaled[:,cc_num]
+            CC_unscaled = CC_matrix_unscaled[:,cc_num]
             self.assertNotAlmostEqual(np.mean(CC_unscaled), 0, places=8)
             self.assertNotAlmostEqual(np.std(CC_unscaled), 1, places=8)
-            CC_scaled = CC_array_scaled[:,cc_num]
+            CC_scaled = CC_matrix_scaled[:,cc_num]
             self.assertAlmostEqual(np.mean(CC_scaled), 0, places=8)
             self.assertAlmostEqual(np.std(CC_scaled), 1, places=8)
 
@@ -94,11 +100,21 @@ class TestPyseshat(unittest.TestCase):
     def test_tailoredSvd(self):
         # Do an SVD on the original PNAS 2017 dataset and check the variance
         # explained by PC1 (it should be .772)
-        CC_matrix, _ = loadPNAS2017CC(scale=True)
-        P, D, Q, PC_matrix = tailoredSvd(CC_matrix)
+
+        CC_df, CC_names, CC_matrix_unscaled, CC_matrix_scaled,\
+            P, D, Q, PC_matrix = loadPNAS2017Data()
         Dsqr = [v**2 for v in D]
         PC1_var = Dsqr[0] / np.sum(Dsqr)
         self.assertAlmostEqual(PC1_var, .772, places=3)
+
+    def test_doFlowAnalysis(self):
+        # Do a flow analysis on the PNAS 2017 dataset
+        CC_df, CC_names, CC_matrix_unscaled, CC_matrix_scaled,\
+            P, D, Q, PC_matrix = loadPNAS2017Data()
+        movArrayOut, velArrayOut, flowInfo = doFlowAnalysis(CC_df, PC_matrix)
+        self.assertEqual(movArrayOut.shape, (414, 9, 2))
+        self.assertEqual(velArrayOut.shape, (414, 9, 3))
+        self.assertEqual(flowInfo.shape, (414, 2))
 
 if __name__ == '__main__':
     unittest.main()
