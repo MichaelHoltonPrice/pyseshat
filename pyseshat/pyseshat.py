@@ -210,7 +210,7 @@ def getNGAs(version):
     NGAs.sort()
     return NGAs
 
-def doFlowAnalysis(CC_df, PC_matrix, stratifyBy='NGA'):
+def doFlowAnalysis(CC_df, PC_matrix, stratifyBy='NGA', interpTimes=None):
     """Build a movement and velocity arrays for the first two columns of
     PC_matrix. In principle, PC_matrix could be any array based on CC_df, but
     it is probably the principle components. CC_df and PC_matrix must have the
@@ -293,6 +293,40 @@ def doFlowAnalysis(CC_df, PC_matrix, stratifyBy='NGA'):
                     newArrayEntryVel[0,p,2] = np.nan
             movArrayOut = np.append(movArrayOut,newArrayEntryMov,axis=0)
             velArrayOut = np.append(velArrayOut,newArrayEntryVel,axis=0)
-    return movArrayOut, velArrayOut, flowInfo
     
+    # Next, create interpolated arrays by iterating over NGAs
+    movArrayOutInterp = np.empty(shape=(0,num_cc,2)) # Initialize the flow array 
+    flowInfoInterp = pd.DataFrame(columns=[stratifyBy,'Time']) # Initialize the info dataframe
+    if interpTimes is None:
+        return movArrayOut, velArrayOut, flowInfo
+    
+    for nga in NGAs:
+        # boolean vector for slicing by NGA:
+        indNga = CC_df["NGA"] == nga
+        # Vector of unique times:
+        times = sorted(np.unique(CC_df.loc[indNga,'Time']))
+        for i_t,t in enumerate(interpTimes):
+            # Is the time in the NGAs range?
+            if t >= min(times) and t <= max(times):
+                newInfoRow = pd.DataFrame(data={'NGA': [nga], 'Time': [t]})
+                #flowInfoInterp = flowInfoInterp.append(newInfoRow,ignore_index=True)
+                flowInfoInterp = pd.concat([flowInfoInterp, newInfoRow],
+                                           ignore_index=True)
+                newArrayEntry = np.empty(shape=(1,num_cc,2))
+                for p in range(movArrayOutInterp.shape[1]):
+                    # Interpolate using flowArray
+                    indFlow = flowInfo['NGA'] == nga
+                    tForInterp = np.array(flowInfo['Time'][indFlow],dtype='float64')
+                    pcForInterp = movArrayOut[indFlow,p,0]
+                    currVal = np.interp(t,tForInterp,pcForInterp)
+                    newArrayEntry[0,p,0] = currVal
+                    if i_t < len(interpTimes) - 1:
+                        nextTime = interpTimes[i_t + 1]
+                        nextVal = np.interp(nextTime,tForInterp,pcForInterp)
+                        newArrayEntry[0,p,1] = nextVal - currVal
+                    else:
+                        newArrayEntry[0,p,1] = np.nan
+                movArrayOutInterp = np.append(movArrayOutInterp,newArrayEntry,axis=0)
 
+    return movArrayOut, velArrayOut, flowInfo,\
+        movArrayOutInterp, flowInfoInterp

@@ -111,10 +111,15 @@ class TestPyseshat(unittest.TestCase):
         # Do a flow analysis on the PNAS 2017 dataset
         CC_df, CC_names, CC_matrix_unscaled, CC_matrix_scaled,\
             P, D, Q, PC_matrix = loadPNAS2017Data()
-        movArrayOut, velArrayOut, flowInfo = doFlowAnalysis(CC_df, PC_matrix)
+        interpTimes = np.arange(-9600,1901,100)
+        movArrayOut, velArrayOut, flowInfo,\
+            movArrayOutInterp, flowInfoInterp =\
+                doFlowAnalysis(CC_df, PC_matrix, interpTimes=interpTimes)
         self.assertEqual(movArrayOut.shape, (414, 9, 2))
         self.assertEqual(velArrayOut.shape, (414, 9, 3))
         self.assertEqual(flowInfo.shape, (414, 2))
+        self.assertEqual(movArrayOutInterp.shape, (852, 9, 2))
+        self.assertEqual(flowInfoInterp.shape, (852, 2))
 
 if __name__ == '__main__':
     unittest.main()
